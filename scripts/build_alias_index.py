@@ -63,8 +63,8 @@ class InfoboxParser(HTMLParser):
         if self.source and self.value_depth is not None and self.depth == self.value_depth:
             self.value_depth = None
         if self.source and self.row_depth is not None and self.depth == self.row_depth:
-            raw = re.sub(r"\\s+", " ", "".join(self.parts)).strip(" ,|\\t\\r\\n")
-            raw = re.sub(r"\\s*\\|\\s*", "|", raw)
+            raw = re.sub(r"\s+", " ", "".join(self.parts)).strip(" ,|\t\r\n")
+            raw = re.sub(r"\s*\|\s*", "|", raw)
             self.values[self.source].append(raw)
             self.source = None
             self.row_depth = None
