@@ -142,7 +142,9 @@ def main():
             completed += 1
             if completed % 100 == 0 or completed == len(futures):
                 print(f"Processed {completed}/{len(futures)}; indexed {len(aliases)}")
-    OUT.write_text(json.dumps({"version": 1, "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "aliases": aliases}, ensure_ascii=False, separators=(",", ":")) + "\\n", encoding="utf-8")
+    if len(aliases) < int(len(characters) * 0.70):
+        raise RuntimeError(f"Only indexed {len(aliases)}/{len(characters)} pages; refusing to publish an incomplete alias index.")
+    OUT.write_text(json.dumps({"version": 1, "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "aliases": aliases}, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
     print(f"Wrote {len(aliases)} alias records to {OUT}")
 
 
