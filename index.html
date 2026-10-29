@@ -254,45 +254,33 @@ async function loadSourceImage(c){
  wrap.classList.add('hidden');img.removeAttribute('src');img.alt=displayName(c);
  const showImage=url=>{
   if(!url||activeCharacter!==c)return;
-  // Reveal the wrapper before assigning src: a lazy image inside display:none
-  // may never start loading, leaving the wrapper hidden forever.
   wrap.classList.remove('hidden');
   img.onload=()=>{if(activeCharacter===c)wrap.classList.remove('hidden')};
   img.onerror=()=>{if(activeCharacter===c)wrap.classList.add('hidden')};
   img.src=url;
  };
  if(sourceImageCache.has(c.name)){showImage(sourceImageCache.get(c.name));return}
- // Load the page image from the character's actual Fandom source page.
- // Do not substitute an unrelated third-party article image for this character.
  try{
-  const pagePath=new URL(c.url).pathname.split('/wiki/')[1];if(!pagePath)throw new Error('No source page URL');
+  const pagePath=new URL(c.url).pathname.split('/wiki/')[1];
+  if(!pagePath)throw new Error('No source page URL');
   const pageTitle=decodeURIComponent(pagePath.replace(/_/g,' '));
-  // Fandom's API often rejects browser fetches due to CORS. JSONP loads the
-  // same public API through a script tag, so the browser does not need CORS access.
-  const apiJsonp=url=>new Promise((resolve,reject)=>{
-   const callback='__marvelImageCallback'+Math.random().toString(36).slice(2);
-   const script=document.createElement('script');
-   const timer=setTimeout(()=>finish(new Error('Fandom image API timed out')),10000);
-   function finish(error,data){
-    clearTimeout(timer);delete window[callback];script.remove();
-    if(error)reject(error);else resolve(data);
-   }
-   window[callback]=data=>finish(null,data);
-   script.onerror=()=>finish(new Error('Fandom image API script failed'));
-   script.src=url+(url.includes('?')?'&':'?')+'callback='+callback;
-   document.head.appendChild(script);
-  });
-  const queryUrl='https://marvel.fandom.com/api.php?action=query&format=json&prop=pageimages&piprop=original%7Cthumbnail&pithumbsize=800&titles='+encodeURIComponent(pageTitle);
+  // Use the same CORS-enabled API request pattern as the source-page alias loader.
+  const requestJson=async params=>{
+   const url='https://marvel.fandom.com/api.php?'+new URLSearchParams({...params,format:'json',origin:'*'}).toString();
+   const response=await fetch(url,{headers:{Accept:'application/json'}});
+   if(!response.ok)throw new Error('Fandom API returned HTTP '+response.status);
+   return response.json();
+  };
   let imageUrl='';
   try{
-   const payload=await apiJsonp(queryUrl);
+   const payload=await requestJson({action:'query',prop:'pageimages',piprop:'original|thumbnail',pithumbsize:'800',pilicense:'any',titles:pageTitle});
    const pages=payload?.query?.pages||{},page=Object.values(pages)[0];
    imageUrl=page?.original?.source||page?.thumbnail?.source||'';
   }catch(err){console.warn('Fandom page-image API failed for',c.name,err)}
-  // Fallback: inspect the parsed page HTML through the same JSONP mechanism.
+  // If PageImages has no result, read the actual source page's infobox image.
   if(!imageUrl){
-   const parseUrl='https://marvel.fandom.com/api.php?action=parse&prop=text&format=json&page='+encodeURIComponent(pageTitle);
-   const payload=await apiJsonp(parseUrl),markup=payload?.parse?.text?.['*'];
+   const payload=await requestJson({action:'parse',prop:'text',page:pageTitle});
+   const markup=payload?.parse?.text?.['*'];
    if(!markup)throw new Error('Source page did not return parsed content');
    const doc=new DOMParser().parseFromString(markup,'text/html');
    const picture=doc.querySelector('.portable-infobox .pi-image-thumbnail, .portable-infobox .pi-image img, .pi-image-thumbnail, .pi-image img, figure.pi-item img');
@@ -302,7 +290,11 @@ async function loadSourceImage(c){
   }
   sourceImageCache.set(c.name,imageUrl||'');
   showImage(imageUrl);
- }catch(err){sourceImageCache.set(c.name,'');console.warn('Could not load source-page image for',c.name,err);}
+ }catch(err){
+  sourceImageCache.set(c.name,'');
+  wrap.classList.add('hidden');
+  console.warn('Could not load source-page image for',c.name,err);
+ }
 }
 async function loadSourceAliases(c){
  const info=infoFor(c),fallback=(info?.aliases||[]).filter(a=>normalizeName(a)!==normalizeName(baseName(c.name)));
