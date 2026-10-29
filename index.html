@@ -252,24 +252,41 @@ const sourceImageCache=new Map();
 async function loadSourceImage(c){
  const wrap=$('profileImageWrap'),img=$('profileImage');
  wrap.classList.add('hidden');img.removeAttribute('src');img.alt=displayName(c);
- if(sourceImageCache.has(c.name)){
-  const cached=sourceImageCache.get(c.name);
-  if(cached&&activeCharacter===c){img.onload=()=>{if(activeCharacter===c)wrap.classList.remove('hidden')};img.onerror=()=>wrap.classList.add('hidden');img.src=cached;}
-  return;
- }
+ const showImage=url=>{
+  if(!url||activeCharacter!==c)return;
+  img.onload=()=>{if(activeCharacter===c)wrap.classList.remove('hidden')};
+  img.onerror=()=>wrap.classList.add('hidden');
+  img.src=url;
+ };
+ if(sourceImageCache.has(c.name)){showImage(sourceImageCache.get(c.name));return}
  try{
   const pagePath=new URL(c.url).pathname.split('/wiki/')[1];if(!pagePath)throw new Error('No source page URL');
   const pageTitle=decodeURIComponent(pagePath.replace(/_/g,' '));
-  const apiUrl='https://marvel.fandom.com/api.php?action=parse&prop=text&format=json&origin=*&page='+encodeURIComponent(pageTitle);
-  const response=await fetch(apiUrl,{headers:{Accept:'application/json'}});
-  if(!response.ok)throw new Error('Source page request failed');
-  const payload=await response.json(),markup=payload?.parse?.text?.['*'];if(!markup)throw new Error('Source page did not return parsed content');
-  const doc=new DOMParser().parseFromString(markup,'text/html');
-  const picture=doc.querySelector('.portable-infobox .pi-image img, .pi-image img');
-  const imageUrl=picture?.getAttribute('data-src')||picture?.getAttribute('data-original')||picture?.getAttribute('src')||'';
-  const resolved=imageUrl?new URL(imageUrl,c.url).href:'';
-  sourceImageCache.set(c.name,resolved);
-  if(resolved&&activeCharacter===c){img.onload=()=>{if(activeCharacter===c)wrap.classList.remove('hidden')};img.onerror=()=>wrap.classList.add('hidden');img.src=resolved;}
+  let imageUrl='';
+  // Ask MediaWiki for the page's main image first; this is more reliable than guessing
+  // the image element's CSS selector in rendered Portable Infobox HTML.
+  const queryUrl='https://marvel.fandom.com/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=original|thumbnail&pithumbsize=800&titles='+encodeURIComponent(pageTitle);
+  const queryResponse=await fetch(queryUrl,{headers:{Accept:'application/json'}});
+  if(queryResponse.ok){
+   const queryPayload=await queryResponse.json();
+   const pages=queryPayload?.query?.pages||{};
+   const page=Object.values(pages)[0];
+   imageUrl=page?.original?.source||page?.thumbnail?.source||'';
+  }
+  // Fallback for pages where the pageimages API does not return a thumbnail.
+  if(!imageUrl){
+   const apiUrl='https://marvel.fandom.com/api.php?action=parse&prop=text&format=json&origin=*&page='+encodeURIComponent(pageTitle);
+   const response=await fetch(apiUrl,{headers:{Accept:'application/json'}});
+   if(!response.ok)throw new Error('Source page request failed');
+   const payload=await response.json(),markup=payload?.parse?.text?.['*'];if(!markup)throw new Error('Source page did not return parsed content');
+   const doc=new DOMParser().parseFromString(markup,'text/html');
+   const picture=doc.querySelector('.portable-infobox .pi-image-thumbnail, .portable-infobox .pi-image img, .pi-image-thumbnail, .pi-image img, figure.pi-item img');
+   imageUrl=picture?.getAttribute('data-src')||picture?.getAttribute('data-original')||picture?.getAttribute('data-image-name')||picture?.getAttribute('src')||'';
+   if(imageUrl.startsWith('//'))imageUrl='https:'+imageUrl;
+   else if(imageUrl)imageUrl=new URL(imageUrl,c.url).href;
+  }
+  sourceImageCache.set(c.name,imageUrl||'');
+  showImage(imageUrl);
  }catch(err){sourceImageCache.set(c.name,'');console.warn('Could not load source-page image for',c.name,err);}
 }
 async function loadSourceAliases(c){
