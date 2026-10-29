@@ -265,7 +265,7 @@ async function loadSourceImage(c){
  const isDannyRandGhostFist=/daniel[_%20 ]rand/i.test(c.url||'') &&
    /earth-616/i.test(c.url||'');
  if(isDannyRandGhostFist){
-  const directImage='https://comicbookmovie.com/images/articles/banners/marvel-comics-to-resurrect-danny-rand-as-the-undead-iron-fist---and-he-has-a-startling-new-look-ab221110.jpg';
+  const directImage='https://comicbookmovie.com/cdn-cgi/image/fit%3Dcover%2Cwidth%3D920%2Cquality%3D85/images/articles/banners/marvel-comics-to-resurrect-danny-rand-as-the-undead-iron-fist---and-he-has-a-startling-new-look-ab221110.jpg';
   sourceImageCache.set(c.name,directImage);
   showImage(directImage);
   return;
