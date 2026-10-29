@@ -263,8 +263,7 @@ async function loadSourceImage(c){
  // Use a stable direct image URL for this one character rather than depending on browser-side
  // Fandom API extraction. Once this displays correctly, the same approach can be generalized.
  const isDannyRandGhostFist=/daniel[_%20 ]rand/i.test(c.url||'') &&
-   /earth-616/i.test(c.url||'') &&
-   /ghost\s*fist/i.test(displayName(c)+' '+(infoFor(c)?.currentAlias||''));
+   /earth-616/i.test(c.url||'');
  if(isDannyRandGhostFist){
   const directImage='https://comicbookmovie.com/images/articles/banners/marvel-comics-to-resurrect-danny-rand-as-the-undead-iron-fist---and-he-has-a-startling-new-look-ab221110.jpg';
   sourceImageCache.set(c.name,directImage);
