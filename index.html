@@ -262,30 +262,36 @@ async function loadSourceImage(c){
  try{
   const pagePath=new URL(c.url).pathname.split('/wiki/')[1];if(!pagePath)throw new Error('No source page URL');
   const pageTitle=decodeURIComponent(pagePath.replace(/_/g,' '));
+  // Fandom's API often rejects browser fetches due to CORS. JSONP loads the
+  // same public API through a script tag, so the browser does not need CORS access.
+  const apiJsonp=url=>new Promise((resolve,reject)=>{
+   const callback='__marvelImageCallback'+Math.random().toString(36).slice(2);
+   const script=document.createElement('script');
+   const timer=setTimeout(()=>finish(new Error('Fandom image API timed out')),10000);
+   function finish(error,data){
+    clearTimeout(timer);delete window[callback];script.remove();
+    if(error)reject(error);else resolve(data);
+   }
+   window[callback]=data=>finish(null,data);
+   script.onerror=()=>finish(new Error('Fandom image API script failed'));
+   script.src=url+(url.includes('?')?'&':'?')+'callback='+callback;
+   document.head.appendChild(script);
+  });
+  const queryUrl='https://marvel.fandom.com/api.php?action=query&format=json&prop=pageimages&piprop=original%7Cthumbnail&pithumbsize=800&titles='+encodeURIComponent(pageTitle);
   let imageUrl='';
-  // Ask MediaWiki for the page's main image first; this is more reliable than guessing
-  // the image element's CSS selector in rendered Portable Infobox HTML.
-  const queryUrl='https://marvel.fandom.com/api.php?action=query&format=json&origin=*&prop=pageimages&piprop=original|thumbnail&pithumbsize=800&titles='+encodeURIComponent(pageTitle);
-  // Some Fandom responses fail in browsers because of cross-origin restrictions.
-  // Try the direct endpoint, then a public CORS proxy before moving to the HTML fallback.
-  const fetchJson=async url=>{
-   let directError;
-   try{const response=await fetch(url,{headers:{Accept:'application/json'}});if(response.ok)return await response.json();directError=new Error('HTTP '+response.status)}catch(err){directError=err}
-   try{const response=await fetch('https://proxy.cors.dev/'+url,{headers:{Accept:'application/json'}});if(response.ok)return await response.json();throw new Error('Proxy HTTP '+response.status)}catch(proxyError){throw new Error('Direct and proxied source requests failed: '+(directError?.message||'request error')+'; '+proxyError.message)}
-  };
   try{
-   const queryPayload=await fetchJson(queryUrl);
-   const pages=queryPayload?.query?.pages||{};
-   const page=Object.values(pages)[0];
+   const payload=await apiJsonp(queryUrl);
+   const pages=payload?.query?.pages||{},page=Object.values(pages)[0];
    imageUrl=page?.original?.source||page?.thumbnail?.source||'';
-  }catch(err){console.warn('PageImages API failed for',c.name,err)}
-  // Fallback for pages where the pageimages API does not return a thumbnail.
+  }catch(err){console.warn('Fandom page-image API failed for',c.name,err)}
+  // Fallback: inspect the parsed page HTML through the same JSONP mechanism.
   if(!imageUrl){
-   const apiUrl='https://marvel.fandom.com/api.php?action=parse&prop=text&format=json&origin=*&page='+encodeURIComponent(pageTitle);
-   const payload=await fetchJson(apiUrl),markup=payload?.parse?.text?.['*'];if(!markup)throw new Error('Source page did not return parsed content');
+   const parseUrl='https://marvel.fandom.com/api.php?action=parse&prop=text&format=json&page='+encodeURIComponent(pageTitle);
+   const payload=await apiJsonp(parseUrl),markup=payload?.parse?.text?.['*'];
+   if(!markup)throw new Error('Source page did not return parsed content');
    const doc=new DOMParser().parseFromString(markup,'text/html');
    const picture=doc.querySelector('.portable-infobox .pi-image-thumbnail, .portable-infobox .pi-image img, .pi-image-thumbnail, .pi-image img, figure.pi-item img');
-   imageUrl=picture?.getAttribute('data-src')||picture?.getAttribute('data-original')||picture?.getAttribute('data-image-name')||picture?.getAttribute('src')||'';
+   imageUrl=picture?.getAttribute('data-src')||picture?.getAttribute('data-original')||picture?.getAttribute('src')||'';
    if(imageUrl.startsWith('//'))imageUrl='https:'+imageUrl;
    else if(imageUrl)imageUrl=new URL(imageUrl,c.url).href;
   }
