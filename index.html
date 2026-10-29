@@ -262,18 +262,8 @@ async function loadSourceImage(c){
   img.src=url;
  };
  if(sourceImageCache.has(c.name)){showImage(sourceImageCache.get(c.name));return}
- // Targeted first test: Danny Rand's source page identifies his current alias as Ghost Fist.
- // Use a stable direct image URL for this one character rather than depending on browser-side
- // Fandom API extraction. Once this displays correctly, the same approach can be generalized.
- const targetIdentity=[c.name||'',c.url||'',displayName(c),infoFor(c)?.currentAlias||''].join(' ');
- const isDannyRandGhostFist=/ghost[\s_-]*fist/i.test(targetIdentity) ||
-   (/daniel.*rand|danny.*rand/i.test(targetIdentity) && /earth[-_ ]?616/i.test(targetIdentity));
- if(isDannyRandGhostFist){
-  const directImage='https://comicbookmovie.com/cdn-cgi/image/fit%3Dcover%2Cwidth%3D920%2Cquality%3D85/images/articles/banners/marvel-comics-to-resurrect-danny-rand-as-the-undead-iron-fist---and-he-has-a-startling-new-look-ab221110.jpg';
-  sourceImageCache.set(c.name,directImage);
-  showImage(directImage);
-  return;
- }
+ // Load the page image from the character's actual Fandom source page.
+ // Do not substitute an unrelated third-party article image for this character.
  try{
   const pagePath=new URL(c.url).pathname.split('/wiki/')[1];if(!pagePath)throw new Error('No source page URL');
   const pageTitle=decodeURIComponent(pagePath.replace(/_/g,' '));
