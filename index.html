@@ -254,41 +254,52 @@ async function loadSourceImage(c){
  wrap.classList.add('hidden');img.removeAttribute('src');img.alt=displayName(c);
  const showImage=url=>{
   if(!url||activeCharacter!==c)return;
+  const absoluteUrl=new URL(url,c.url).href;
   wrap.classList.remove('hidden');
   img.onload=()=>{if(activeCharacter===c)wrap.classList.remove('hidden')};
-  img.onerror=()=>{if(activeCharacter===c)wrap.classList.add('hidden')};
-  img.src=url;
+  img.onerror=()=>{
+   if(activeCharacter!==c)return;
+   wrap.classList.add('hidden');
+   console.warn('Character portrait URL failed to load for',c.name,absoluteUrl);
+  };
+  img.src=absoluteUrl;
  };
  if(sourceImageCache.has(c.name)){showImage(sourceImageCache.get(c.name));return}
  try{
   const pagePath=new URL(c.url).pathname.split('/wiki/')[1];
   if(!pagePath)throw new Error('No source page URL');
   const pageTitle=decodeURIComponent(pagePath.replace(/_/g,' '));
-  // Use the same CORS-enabled API request pattern as the source-page alias loader.
   const requestJson=async params=>{
    const url='https://marvel.fandom.com/api.php?'+new URLSearchParams({...params,format:'json',origin:'*'}).toString();
-   const response=await fetch(url,{headers:{Accept:'application/json'}});
+   const response=await fetch(url);
    if(!response.ok)throw new Error('Fandom API returned HTTP '+response.status);
    return response.json();
   };
   let imageUrl='';
+  // Ask the page-image extension for the source page's lead image first.
   try{
-   const payload=await requestJson({action:'query',prop:'pageimages',piprop:'original|thumbnail',pithumbsize:'800',pilicense:'any',titles:pageTitle});
+   const payload=await requestJson({action:'query',prop:'pageimages',piprop:'thumbnail|original',pithumbsize:'1000',pilicense:'any',titles:pageTitle});
    const pages=payload?.query?.pages||{},page=Object.values(pages)[0];
    imageUrl=page?.original?.source||page?.thumbnail?.source||'';
   }catch(err){console.warn('Fandom page-image API failed for',c.name,err)}
-  // If PageImages has no result, read the actual source page's infobox image.
   if(!imageUrl){
    const payload=await requestJson({action:'parse',prop:'text',page:pageTitle});
    const markup=payload?.parse?.text?.['*'];
    if(!markup)throw new Error('Source page did not return parsed content');
    const doc=new DOMParser().parseFromString(markup,'text/html');
-   const picture=doc.querySelector('.portable-infobox .pi-image-thumbnail, .portable-infobox .pi-image img, .pi-image-thumbnail, .pi-image img, figure.pi-item img');
-   imageUrl=picture?.getAttribute('data-src')||picture?.getAttribute('data-original')||picture?.getAttribute('src')||'';
+   // Prefer the main infobox image; account for Fandom's lazy-loaded image attributes.
+   const picture=doc.querySelector('.portable-infobox .pi-image-thumbnail, .portable-infobox .pi-image img, .portable-infobox .pi-image picture img, .pi-image-thumbnail, .pi-image img, figure.pi-item img');
+   if(picture){
+    const srcset=picture.getAttribute('srcset')||picture.getAttribute('data-srcset')||'';
+    const largest=srcset.split(',').map(x=>x.trim().split(/\s+/)).filter(x=>x[0]).pop();
+    imageUrl=picture.getAttribute('data-src')||picture.getAttribute('data-lazy-src')||picture.getAttribute('data-original')||picture.getAttribute('data-original-src')||largest?.[0]||picture.getAttribute('src')||'';
+   }
    if(imageUrl.startsWith('//'))imageUrl='https:'+imageUrl;
    else if(imageUrl)imageUrl=new URL(imageUrl,c.url).href;
+   if(imageUrl.startsWith('data:'))imageUrl='';
   }
-  sourceImageCache.set(c.name,imageUrl||'');
+  if(!imageUrl)throw new Error('No main image was returned for source page: '+pageTitle);
+  sourceImageCache.set(c.name,imageUrl);
   showImage(imageUrl);
  }catch(err){
   sourceImageCache.set(c.name,'');
