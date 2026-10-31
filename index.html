@@ -326,25 +326,29 @@ async function loadSourcePowers(c){
   const payload=await response.json(),html=payload?.parse?.text?.['*'];
   if(!html)throw new Error('Source page did not return parsed content');
   const doc=new DOMParser().parseFromString(html,'text/html');
-  const headings=[...doc.querySelectorAll('.mw-parser-output h2, .mw-parser-output h3, .mw-parser-output h4, h2, h3, h4')];
-  const heading=headings.find(h=>/^powers(?: and abilities)?$/i.test((h.textContent||'').replace(/\\[edit\\]/gi,'').trim()));
-  if(!heading)throw new Error('No Powers section found');
-  const level=Number(heading.tagName.slice(1)),names=[],seen=new Set();
-  let node=heading.parentElement?.nextElementSibling;
-  while(node){
-   if(/^H[1-6]$/.test(node.tagName)&&Number(node.tagName.slice(1))<=level)break;
-   if(node.matches?.('h2,h3,h4,h5,h6')&&Number(node.tagName.slice(1))<=level)break;
-   node.querySelectorAll?.('li').forEach(li=>{
-    const clone=li.cloneNode(true);
-    clone.querySelectorAll('ul,ol,sup,.reference,.mw-editsection,style,script').forEach(el=>el.remove());
-    const raw=(clone.textContent||'').replace(/\\[[0-9]+\\]/g,'').replace(/\\s+/g,' ').trim();
-    const colon=raw.indexOf(':');
-    if(colon>0){
-     const name=raw.slice(0,colon).replace(/^[•·▪◦\\-\\s]+/,'').trim();
-     if(name&&!seen.has(name.toLowerCase())){seen.add(name.toLowerCase());names.push(name);}
-    }
-   });
-   node=node.nextElementSibling;
+  const headings=[...doc.querySelectorAll('.mw-parser-output h2, .mw-parser-output h3, .mw-parser-output h4, .mw-parser-output h5, h2, h3, h4, h5')];
+  const cleanHeading=h=>(h.textContent||'').replace(/\\[edit\\]/gi,'').replace(/\\s+/g,' ').trim().toLowerCase();
+  const parentIndex=headings.findIndex(h=>cleanHeading(h)==='powers and abilities');
+  let powerHeading=headings.find((h,i)=>i>parentIndex&&cleanHeading(h)==='powers');
+  if(!powerHeading)powerHeading=headings.find(h=>cleanHeading(h)==='powers');
+  let scope=null;
+  if(powerHeading){
+   scope=powerHeading.parentElement;
+   while(scope&&scope!==doc.body&&!scope.querySelector('ul li'))scope=scope.parentElement;
+  }
+  if(!scope&&parentIndex>=0)scope=headings[parentIndex].parentElement;
+  if(!scope)throw new Error('No Powers or Powers and Abilities section found');
+  const entries=[...scope.querySelectorAll('li')];
+  const names=[],seen=new Set();
+  for(const li of entries){
+   if(li.closest('nav,aside,.toc,.portable-infobox'))continue;
+   const clone=li.cloneNode(true);
+   clone.querySelectorAll('ul,ol,sup,.reference,.mw-editsection,style,script').forEach(el=>el.remove());
+   const raw=(clone.textContent||'').replace(/\\[[0-9]+\\]/g,'').replace(/\\s+/g,' ').trim();
+   const colon=raw.indexOf(':');
+   if(colon<=0)continue;
+   const name=raw.slice(0,colon).replace(/^[•·▪◦\\-\\s]+/,'').trim();
+   if(name&&!seen.has(name.toLowerCase())){seen.add(name.toLowerCase());names.push(name);}
   }
   if(activeCharacter!==c)return;
   list.innerHTML=names.length?names.map(name=>'<li>'+safe(name)+'</li>').join(''):'<li>No power names could be extracted from this page.</li>';
