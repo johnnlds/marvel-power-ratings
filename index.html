@@ -58,7 +58,7 @@ main{padding-bottom:64px}.section{display:none}.section.active{display:block}.fi
 </main>
 <footer class="footer"><p><strong>Data source:</strong> <a href="https://github.com/sanand0/marvel-powers" target="_blank" rel="noopener">sanand0/marvel-powers</a>, based on Marvel Fandom's <a href="https://marvel.fandom.com/wiki/Power_Grid" target="_blank" rel="noopener">Power Grid</a>. Dataset last updated February 27, 2023.</p><p>Independent fan-made data explorer. Not affiliated with or endorsed by Marvel. Ratings reflect the source dataset and may be incomplete or outdated.</p></footer>
 </div>
-<div class="profile-overlay" id="profileOverlay" role="dialog" aria-modal="true" aria-labelledby="profileName"><div class="profile"><div class="profile-head"><button class="close" id="closeProfile" aria-label="Close profile">×</button><div class="eyebrow">Character file</div><h2 id="profileName"></h2><div class="sub" id="profileSub"></div></div><div class="profile-image-wrap hidden" id="profileImageWrap"><div class="profile-image-status" id="profileImageStatus" role="status">Looking for the source-page image…</div><img id="profileImage" alt="" loading="eager" decoding="async" style="display:none"><div class="profile-image-credit">Image from the character’s source page</div></div><div class="profile-body"><div class="profile-summary"><div><span class="field-label">Total</span><strong id="profileTotal"></strong></div><span class="versus">POWER GRID</span></div><section class="character-bio"><div class="field-label">Real name</div><p id="profileRealName">Loading…</p><div class="field-label">Current alias</div><p id="profileCurrentAlias">Loading source-page aliases…</p><div class="field-label">Former aliases & other names</div><p id="profileAliases">Loading…</p><div class="field-label">Powers & abilities</div><p id="profileDescription"></p></section><div id="profileStats"></div><div class="range-note" id="profileRange"></div><div class="profile-actions"><button class="btn primary" id="compareThis">Compare this character</button><a class="btn" id="wikiLink" href="#" target="_blank" rel="noopener">Open source page ↗</a></div><div class="notice">Minimum and maximum values preserve multiple recorded forms or ratings where present. A range is not necessarily a single canonical form.</div></div></div></div>
+<div class="profile-overlay" id="profileOverlay" role="dialog" aria-modal="true" aria-labelledby="profileName"><div class="profile"><div class="profile-head"><button class="close" id="closeProfile" aria-label="Close profile">×</button><div class="eyebrow">Character file</div><h2 id="profileName"></h2><div class="sub" id="profileSub"></div></div><div class="profile-image-wrap hidden" id="profileImageWrap"><div class="profile-image-status" id="profileImageStatus" role="status">Looking for the source-page image…</div><img id="profileImage" alt="" loading="eager" decoding="async" style="display:none"><div class="profile-image-credit" id="profileImageCredit">Source-page image diagnostic will appear here.</div></div><div class="profile-body"><div class="profile-summary"><div><span class="field-label">Total</span><strong id="profileTotal"></strong></div><span class="versus">POWER GRID</span></div><section class="character-bio"><div class="field-label">Real name</div><p id="profileRealName">Loading…</p><div class="field-label">Current alias</div><p id="profileCurrentAlias">Loading source-page aliases…</p><div class="field-label">Former aliases & other names</div><p id="profileAliases">Loading…</p><div class="field-label">Powers & abilities</div><p id="profileDescription"></p></section><div id="profileStats"></div><div class="range-note" id="profileRange"></div><div class="profile-actions"><button class="btn primary" id="compareThis">Compare this character</button><a class="btn" id="wikiLink" href="#" target="_blank" rel="noopener">Open source page ↗</a></div><div class="notice">Minimum and maximum values preserve multiple recorded forms or ratings where present. A range is not necessarily a single canonical form.</div></div></div></div>
 <script>
 (() => {
 'use strict';
@@ -250,14 +250,15 @@ function statBars(c,mode='min'){return STATS.map(s=>{const min=val(c,s.key,'min'
 function getScore(c,metric,mode='max'){if(metric==='total')return total(c,mode);const s=STATS.find(x=>x.sort===metric);return s?val(c,s.key,mode):0}
 const sourceImageCache=new Map();
 async function loadSourceImage(c){
- const wrap=$('profileImageWrap'),img=$('profileImage'),status=$('profileImageStatus');
- wrap.classList.remove('hidden');status.style.display='block';status.textContent='Looking for the source-page image…';img.style.display='none';img.removeAttribute('src');img.alt=displayName(c);
+ const wrap=$('profileImageWrap'),img=$('profileImage'),status=$('profileImageStatus'),credit=$('profileImageCredit');
+ wrap.classList.remove('hidden');status.style.display='block';status.textContent='Looking for the source-page image…';credit.textContent='Checking the source-page image URL…';img.style.display='none';img.removeAttribute('src');img.alt=displayName(c);
  const showImage=url=>{
   if(!url||activeCharacter!==c)return;
   const absoluteUrl=new URL(url,c.url).href;
+  credit.textContent='Image URL: '+absoluteUrl;
   status.textContent='Image URL found; loading portrait…';
-  img.onload=()=>{if(activeCharacter===c){img.style.display='block';status.style.display='none';wrap.classList.remove('hidden')}};
-  img.onerror=()=>{if(activeCharacter!==c)return;img.style.display='none';status.style.display='block';status.textContent='The source page returned an image URL, but the image file failed to load.';console.warn('Character portrait URL failed to load for',c.name,absoluteUrl)};
+  img.onload=()=>{if(activeCharacter===c){img.style.display='block';status.style.display='none';wrap.classList.remove('hidden');credit.textContent='Loaded source-page image URL: '+absoluteUrl}};
+  img.onerror=()=>{if(activeCharacter!==c)return;img.style.display='none';status.style.display='block';status.textContent='Image file failed to load. URL: '+absoluteUrl;credit.textContent='The source-page image URL is shown above.';console.warn('Character portrait URL failed to load for',c.name,absoluteUrl)};
   img.src=absoluteUrl;
  };
  if(sourceImageCache.has(c.name)){const cached=sourceImageCache.get(c.name);if(cached){showImage(cached)}else{status.textContent='No image URL was found on the source page in this session.'}return}
@@ -301,7 +302,7 @@ async function loadSourceImage(c){
   if(!imageUrl)throw new Error('Fandom did not provide a usable main-page portrait for “'+pageTitle+'”. '+apiError);
   sourceImageCache.set(c.name,imageUrl);showImage(imageUrl);
  }catch(err){
-  sourceImageCache.set(c.name,'');img.style.display='none';status.style.display='block';status.textContent='Image lookup failed: '+(err.message||String(err));wrap.classList.remove('hidden');console.warn('Could not load source-page image for',c.name,err);
+  sourceImageCache.set(c.name,'');img.style.display='none';status.style.display='block';status.textContent='Image lookup failed: '+(err.message||String(err));credit.textContent='No image URL loaded. Check the diagnostic message above.';wrap.classList.remove('hidden');console.warn('Could not load source-page image for',c.name,err);
  }
 }
 async function loadSourceAliases(c){
