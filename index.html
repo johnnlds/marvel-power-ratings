@@ -327,22 +327,21 @@ async function loadSourcePowers(c){
   if(!html)throw new Error('Source page did not return parsed content');
   const doc=new DOMParser().parseFromString(html,'text/html');
   const root=doc.querySelector('.mw-parser-output')||doc.body;
-  const headings=[...root.querySelectorAll('h2, h3, h4, h5')];
+  const headings=[...root.querySelectorAll('h2,h3,h4,h5,h6')];
   const cleanHeading=h=>(h.querySelector('.mw-headline')?.textContent||h.textContent||'').replace(/\\[edit\\]/gi,'').replace(/\\s+/g,' ').trim().toLowerCase();
   const powerIndex=headings.findIndex(h=>cleanHeading(h)==='powers');
   if(powerIndex<0)throw new Error('No Powers section found');
-  const powerHeading=headings[powerIndex];
-  // Only take list items whose nearest preceding section heading is exactly "Powers".
-  // This avoids sweeping up lists inside large wrapper elements or later sections.
-  const entries=[...root.querySelectorAll('li')].filter(li=>{
-   if(li.closest('nav,aside,.toc,.portable-infobox'))return false;
-   let preceding=null;
-   for(const h of headings){
-    if(h.compareDocumentPosition(li)&Node.DOCUMENT_POSITION_FOLLOWING)preceding=h;
-    else break;
-   }
-   return preceding===powerHeading;
-  });
+  const heading=headings[powerIndex];
+  const level=Number(heading.tagName.slice(1));
+  const sectionNodes=[];
+  for(let node=heading.nextElementSibling;node;node=node.nextElementSibling){
+   if(/^H[2-6]$/.test(node.tagName)&&Number(node.tagName.slice(1))<=level)break;
+   sectionNodes.push(node);
+  }
+  const entries=sectionNodes.flatMap(node=>[
+   ...(node.matches('ul,ol')?[node]:[]),
+   ...node.querySelectorAll('ul,ol')
+  ].flatMap(ul=>[...ul.children].filter(child=>child.tagName==='LI')));
   const names=[],seen=new Set();
   for(const li of entries){
    if(li.closest('nav,aside,.toc,.portable-infobox'))continue;
@@ -362,3 +361,51 @@ async function loadSourcePowers(c){
   console.warn('Could not load source-page powers for',c.name,err);
  }
 }
+async function loadSourceAliases(c){
+ const info=infoFor(c),fallback=(info?.aliases||[]).filter(a=>normalizeName(a)!==normalizeName(baseName(c.name)));
+ if(renderIndexedAliases(c))return;
+ // Show useful local values immediately; replace them with the source-page fields when available.
+ $('profileCurrentAlias').textContent=info?.currentAlias||baseName(c.name)||'Not listed';
+ $('profileAliases').textContent=fallback.join(', ')||'Checking source page…';
+ try{
+  const pagePath=new URL(c.url).pathname.split('/wiki/')[1];if(!pagePath)throw new Error('No source page URL');
+  const pageTitle=decodeURIComponent(pagePath.replace(/_/g,' '));
+  const apiUrl='https://marvel.fandom.com/api.php?action=parse&prop=text&format=json&origin=*&page='+encodeURIComponent(pageTitle);
+  const response=await fetch(apiUrl,{headers:{Accept:'application/json'}});if(!response.ok)throw new Error('Source page request failed');
+  const payload=await response.json(),html=payload?.parse?.text?.['*'];if(!html)throw new Error('Source page did not return parsed content');
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const rowValue=(keys)=>{for(const key of keys){const row=doc.querySelector('[data-source="'+key+'"]');const value=row?.querySelector('.pi-data-value')||row?.querySelector('.pi-item-value')||row;if(value){const clone=value.cloneNode(true);clone.querySelectorAll('sup,.reference,.mw-editsection,style,script').forEach(n=>n.remove());const items=[...clone.querySelectorAll('li')].map(n=>n.textContent.trim()).filter(Boolean);const raw=(items.length?items.join(', '):clone.textContent).replace(/\[[0-9]+\]/g,'').replace(/\s+/g,' ').trim();if(raw)return raw;}}return '';};
+  const current=rowValue(['currentalias','currentAlias','CurrentAlias']),former=rowValue(['aliases','Aliases']);
+  if(activeCharacter!==c)return;$('profileCurrentAlias').textContent=current||'No current alias listed on source page.';$('profileAliases').textContent=former||fallback.join(', ')||'No former aliases listed on source page.';
+ }catch(err){if(activeCharacter!==c)return;$('profileCurrentAlias').textContent='Could not retrieve current alias from source page.';$('profileAliases').textContent=fallback.length?fallback.join(', '):'Could not retrieve aliases from source page.';console.warn('Could not load source-page aliases for',c.name,err);}
+}
+function openProfile(c){activeCharacter=c;const info=infoFor(c),source=sourceAliasInfo(c);$('profileName').textContent=displayName(c);$('profileSub').textContent=universe(c.name)+' · '+c.name;$('profileRealName').textContent=baseName(c.name);$('profileCurrentAlias').textContent=source?.currentAlias||info?.currentAlias||baseName(c.name)||'Not listed';$('profileAliases').textContent=[...(source?.formerAliases||[]),...(info?.aliases||[]).filter(a=>normalizeName(a)!==normalizeName(baseName(c.name)))].filter((value,i,all)=>value&&all.findIndex(other=>normalizeName(other)===normalizeName(value))===i).join(', ')||'Alias index is loading…';$('profileTotal').textContent=total(c,'min')+' / 42';$('profileStats').innerHTML=statBars(c);$('profilePowers').innerHTML='<li>Loading powers from source page…</li>';$('profileRange').textContent='';$('wikiLink').href=c.url||'https://marvel.fandom.com/wiki/Power_Grid';$('profileOverlay').classList.add('open');document.body.style.overflow='hidden';loadSourceAliases(c);loadSourceImage(c);loadSourcePowers(c)}
+function closeProfile(){$('profileOverlay').classList.remove('open');document.body.style.overflow='';$('profileImageWrap').classList.add('hidden');$('profileImage').removeAttribute('src')}
+function card(c){const kept=isKept(c);return `<article class="char-card" tabindex="0" role="button" data-profile="${safe(c.name)}" aria-label="Open ${safe(c.name)} profile"><div class="card-top"></div><div class="card-content"><h3 class="char-name">${safe(displayName(c))}</h3><div class="earth">${safe(universe(c.name))}${kept?' · ★ Kept':''}</div><div class="mini-grid">${STATS.map(s=>`<div class="mini-stat"><b>${safe(statDisplay(c,s))}</b><span>${s.short}</span></div>`).join('')}</div><div class="card-foot"><span class="score">${total(c,showMaxTotals?'max':'min')} <small>/ 42</small></span><button class="text-btn" type="button">View profile ↗</button></div><div class="card-keep-row"><button class="keep-btn ${kept?'kept':''}" type="button" data-pin="${safe(c.name)}" aria-pressed="${kept}">${kept?'★ Kept':'☆ Keep character'}</button></div></div></article>`}
+const visibleCharacters=()=>characters.filter(c=>!$('earth616Only').checked||universe(c.name)==='Earth-616');
+function applySearch(){const q=$('search').value.trim().toLowerCase(),sort=$('sort').value;filtered=visibleCharacters().filter(c=>isKept(c)||!q||searchText(c).toLowerCase().includes(q)||normalizeName(searchText(c)).includes(normalizeName(q)));filtered.sort((a,b)=>{const keptOrder=Number(isKept(a))-Number(isKept(b));if(keptOrder)return keptOrder;return (sort==='name'?displayName(a).localeCompare(displayName(b)):sort==='power'?total(b,'min')-total(a,'min'):(()=>{const k=STATS.find(s=>s.sort===sort);return k?val(b,k.key,'min')-val(a,k.key,'min'):0})()||a.name.localeCompare(b.name))});page=1;renderCards()}
+function renderCards(){const start=(page-1)*PAGE_SIZE,items=filtered.slice(start,start+PAGE_SIZE);$('discoverCount').textContent=`${filtered.length.toLocaleString()} character${filtered.length===1?'':'s'} found`;$('cards').innerHTML=items.length?items.map(card).join(''):'<div class="empty">No characters match that search. Try a different name.</div>';const pages=Math.max(1,Math.ceil(filtered.length/PAGE_SIZE));$('pageLabel').textContent=`Page ${page} of ${pages}`;$('prevPage').disabled=page<=1;$('nextPage').disabled=page>=pages}
+function renderCompareSuggestions(){const q=$('compareSearch').value.trim();if(!q){$('compareSuggestions').classList.add('hidden');$('compareSuggestions').innerHTML='';return}const matches=characters.filter(c=>!compareNames.includes(c.name)&&(searchText(c).toLowerCase().includes(q.toLowerCase())||normalizeName(searchText(c)).includes(normalizeName(q)))).slice(0,12);$('compareSuggestions').innerHTML=matches.length?matches.map(c=>`<button type="button" class="compare-suggestion" data-add-compare="${safe(c.name)}"><strong>${safe(displayName(c))}</strong><span>${safe(universe(c.name))}</span></button>`).join(''):'<div class="compare-no-results">No matching characters.</div>';$('compareSuggestions').classList.remove('hidden')}
+function addCompareCharacter(name){if(compareNames.includes(name)||compareNames.length>=10)return;if(!characters.some(c=>c.name===name))return;compareNames.push(name);$('compareSearch').value='';$('compareSuggestions').classList.add('hidden');renderCompare()}
+function removeCompareCharacter(name){const i=compareNames.indexOf(name);if(i>=0)compareNames.splice(i,1);renderCompare()}
+function renderCompare(){const selected=compareNames.map(name=>characters.find(c=>c.name===name)).filter(Boolean);$('compareCount').textContent=`(${selected.length}/10)`;$('clearCompare').disabled=!selected.length;$('compareSelected').innerHTML=selected.map(c=>`<span class="compare-chip"><span>${safe(displayName(c))}</span><button type="button" data-remove-compare="${safe(c.name)}" aria-label="Remove ${safe(displayName(c))}">×</button></span>`).join('')||'<div class="compare-empty">Search above and add at least two characters to compare.</div>';$('compareSearch').disabled=selected.length>=10;$('compareSearch').placeholder=selected.length>=10?'Maximum of 10 characters selected':'Type a character name or alias…';$('compareRows').innerHTML=selected.length<2?'<div class="compare-empty">Add one more character to see the comparison.</div>':`<div class="compare-table-wrap"><table class="multi-compare"><thead><tr><th>Attribute</th>${selected.map(c=>`<th>${safe(displayName(c))}</th>`).join('')}</tr></thead><tbody>${STATS.map(s=>{const mode=showMaxTotals?'max':'min',values=selected.map(c=>val(c,s.key,mode)),best=Math.max(...values);return `<tr><th>${safe(s.label)}</th>${selected.map(c=>{const min=val(c,s.key,'min'),max=val(c,s.key,'max'),score=val(c,s.key,mode);return `<td><strong class="${score===best?'category-winner':''}">${score}</strong>${min!==max?`<small>${showMaxTotals?'Range: '+min+'–'+max:'Range: '+min+'–'+max}</small>`:''}<div class="compare-meter"><i style="width:${score/7*100}%"></i></div></td>`}).join('')}</tr>`}).join('')}<tr class="compare-total-row"><th>Total</th>${(()=>{const values=selected.map(c=>total(c,showMaxTotals?'max':'min')),best=Math.max(...values);return selected.map(c=>{const score=total(c,showMaxTotals?'max':'min');return `<td><strong class="${score===best?'category-winner':''}">${score} / 42</strong><div class="compare-meter"><i style="width:${score/42*100}%"></i></div></td>`}).join('')})()}</tr></tbody></table></div>`;$('compareCount').textContent=`(${selected.length}/10)`}
+function updateTotalMode(){showMaxTotals=!showMaxTotals;['discoverTotalMode','compareTotalMode'].forEach(id=>{const b=$(id);b.textContent=showMaxTotals?'Show minimum totals':'Show max totals';b.setAttribute('aria-pressed',String(showMaxTotals))});renderCards();renderCompare()}
+function switchTab(tab){document.querySelectorAll('nav button[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));document.querySelectorAll('.section').forEach(s=>s.classList.toggle('active',s.id===tab));$('nav').classList.remove('open');window.scrollTo({top:0,behavior:'smooth'})}
+document.querySelectorAll('nav button[data-tab]').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
+$('navToggle').addEventListener('click',()=>$('nav').classList.toggle('open'));
+$('discoverTotalMode').addEventListener('click',updateTotalMode);$('compareTotalMode').addEventListener('click',updateTotalMode);$('clearKept').addEventListener('click',clearKept);saveKept();let searchDebounce; $('search').addEventListener('input',()=>{clearTimeout(searchDebounce);searchDebounce=setTimeout(applySearch,90)});$('sort').addEventListener('change',applySearch);$('earth616Only').addEventListener('change',applySearch);
+$('prevPage').addEventListener('click',()=>{if(page>1){page--;renderCards();window.scrollTo({top:$('discover').offsetTop-80,behavior:'smooth'})}});
+$('nextPage').addEventListener('click',()=>{if(page<Math.ceil(filtered.length/PAGE_SIZE)){page++;renderCards();window.scrollTo({top:$('discover').offsetTop-80,behavior:'smooth'})}});
+$('compareSearch').addEventListener('input',renderCompareSuggestions);$('compareSearch').addEventListener('focus',renderCompareSuggestions);$('compareSuggestions').addEventListener('click',e=>{const button=e.target.closest('[data-add-compare]');if(button)addCompareCharacter(button.dataset.addCompare)});$('compareSelected').addEventListener('click',e=>{const button=e.target.closest('[data-remove-compare]');if(button)removeCompareCharacter(button.dataset.removeCompare)});$('clearCompare').addEventListener('click',()=>{compareNames.splice(0,compareNames.length);renderCompare()});document.addEventListener('click',e=>{if(!e.target.closest('.compare-search-wrap'))$('compareSuggestions').classList.add('hidden')});
+$('cards').addEventListener('click',e=>{const pin=e.target.closest('[data-pin]');if(pin){e.preventDefault();e.stopPropagation();toggleKept(pin.dataset.pin);return}const el=e.target.closest('[data-profile]');if(el){const c=characters.find(c=>c.name===el.dataset.profile);if(c)openProfile(c)}});
+$('cards').addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[data-profile]')){e.preventDefault();const c=characters.find(c=>c.name===e.target.dataset.profile);if(c)openProfile(c)}});
+
+$('closeProfile').addEventListener('click',closeProfile);$('profileOverlay').addEventListener('click',e=>{if(e.target===$('profileOverlay'))closeProfile()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeProfile()});
+$('compareThis').addEventListener('click',()=>{if(!activeCharacter)return;switchTab('compare');if(!compareNames.includes(activeCharacter.name)){if(compareNames.length>=10)compareNames.pop();compareNames.unshift(activeCharacter.name)}renderCompare();closeProfile()});
+async function loadDataset(){const urls=[DATA_URL,'https://cdn.jsdelivr.net/gh/sanand0/marvel-powers@master/marvel-powers-summary.json'];let lastError;for(const url of urls){const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),15000);try{const response=await fetch(url,{signal:controller.signal,cache:'no-cache'});if(!response.ok)throw new Error(`Dataset request failed (${response.status})`);const rows=await response.json();if(!Array.isArray(rows)||!rows.length||!rows[0].name||!('max Strength' in rows[0]))throw new Error('The JSON did not contain the expected character columns.');return rows.map(r=>{const c={name:r.name,url:r.url||''};for(const s of STATS){c[`min ${s.key}`]=Number(r[`min ${s.key}`])||0;c[`max ${s.key}`]=Number(r[`max ${s.key}`])||0}return c}).filter(c=>c.name)}catch(err){lastError=err;console.warn('Dataset source failed:',url,err)}finally{clearTimeout(timeout)}}throw lastError||new Error('All dataset sources failed')}
+async function init(){loadAliasIndex();try{const data=await loadDataset();characters=data;const totalCharsEl=$('totalChars');if(totalCharsEl)totalCharsEl.textContent=characters.length.toLocaleString();characters.forEach(c=>searchText(c));applySearch();const iron=characters.find(c=>normalizeName(baseName(c.name))==='iron man')||characters.find(c=>normalizeName(c.name).startsWith('iron man'));const thor=characters.find(c=>normalizeName(baseName(c.name))==='thor')||characters.find(c=>normalizeName(c.name).startsWith('thor'));if(iron)compareNames.push(iron.name);if(thor&&thor.name!==iron?.name)compareNames.push(thor.name);renderCompare()}catch(err){console.error(err);$('cards').innerHTML=`<div class="empty">Couldn't load the character dataset after trying two sources.<br><br><span class="muted">Check your internet connection and reload. If the issue continues, the dataset host may be temporarily unavailable.</span><br><br><a href="${DATA_URL}" target="_blank" rel="noopener">Open source dataset ↗</a><br><br><button class="btn primary" type="button" onclick="location.reload()">Try again</button></div>`;$('discoverCount').textContent='Data unavailable'}}
+init();
+})();
+</script>
+</body>
+</html>
