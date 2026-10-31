@@ -275,39 +275,46 @@ async function loadSourceImage(c){
   let imageUrl='';
   let apiError='';
   const isPlaceholderImage=url=>/no[_-]?image|missing[_-]?image|placeholder|image[_-]?not[_-]?available|default[_-]?avatar/i.test(String(url||''));
-  const getPageImage=async title=>{
-   const payload=await requestJson({action:'query',prop:'pageimages',piprop:'thumbnail|original',pithumbsize:'1000',pilicense:'any',titles:title});
-   const pages=payload?.query?.pages||{},page=Object.values(pages)[0];
-   return page?.original?.source||page?.thumbnail?.source||'';
+  const imageFromElement=picture=>{
+   if(!picture)return '';
+   const srcset=picture.getAttribute('srcset')||picture.getAttribute('data-srcset')||'';
+   const candidates=srcset.split(',').map(x=>x.trim().split(/\\s+/)).filter(x=>x[0]);
+   const largest=candidates.length?candidates[candidates.length-1][0]:'';
+   return picture.getAttribute('data-src')||picture.getAttribute('data-lazy-src')||picture.getAttribute('data-original')||picture.getAttribute('data-original-src')||largest||picture.getAttribute('src')||'';
   };
   try{
-   // Danny Rand's character page uses cover art as its page image. Use the lead image
-   // from his Fandom gallery instead, which is the character portrait.
    if(normalizeName(pageTitle)==='daniel rand (earth-616)'){
-    imageUrl=await getPageImage(pageTitle+'/Gallery');
+    // Danny's character page designates cover art as its page image. Read the
+    // first actual image in the gallery instead of using the page-level image API.
+    const galleryTitle=pageTitle+'/Gallery';
+    const galleryPayload=await requestJson({action:'parse',prop:'text',page:galleryTitle});
+    const galleryMarkup=galleryPayload?.parse?.text?.['*'];
+    if(!galleryMarkup)throw new Error('Fandom returned no parsed gallery HTML.');
+    const galleryDoc=new DOMParser().parseFromString(galleryMarkup,'text/html');
+    const galleryPicture=galleryDoc.querySelector('.wikia-gallery-item img, .gallerybox img, .mw-gallery-traditional img, .mw-gallery-packed img, figure.gallery img, .gallery img');
+    imageUrl=imageFromElement(galleryPicture);
+    if(imageUrl.startsWith('//'))imageUrl='https:'+imageUrl;
+    else if(imageUrl)imageUrl=new URL(imageUrl,'https://marvel.fandom.com').href;
+    if(imageUrl.startsWith('data:')||isPlaceholderImage(imageUrl))imageUrl='';
+    if(!imageUrl)throw new Error('No usable image was found in Danny Rand’s Fandom gallery.');
+   }else{
+    const payload=await requestJson({action:'query',prop:'pageimages',piprop:'thumbnail|original',pithumbsize:'1000',pilicense:'any',titles:pageTitle});
+    const pages=payload?.query?.pages||{},page=Object.values(pages)[0];
+    imageUrl=page?.original?.source||page?.thumbnail?.source||'';
     if(isPlaceholderImage(imageUrl))imageUrl='';
+    if(!imageUrl){
+     const parsed=await requestJson({action:'parse',prop:'text',page:pageTitle});
+     const markup=parsed?.parse?.text?.['*'];
+     if(!markup)throw new Error('Fandom returned no parsed page HTML. '+apiError);
+     const doc=new DOMParser().parseFromString(markup,'text/html');
+     imageUrl=imageFromElement(doc.querySelector('.portable-infobox .pi-image-thumbnail, .portable-infobox .pi-image img, .pi-image-thumbnail, .pi-image img, figure.pi-item img'));
+     if(imageUrl.startsWith('//'))imageUrl='https:'+imageUrl;
+     else if(imageUrl)imageUrl=new URL(imageUrl,c.url).href;
+     if(imageUrl.startsWith('data:')||isPlaceholderImage(imageUrl))imageUrl='';
+    }
    }
-   if(!imageUrl)imageUrl=await getPageImage(pageTitle);
-  }catch(err){apiError=err.message||'Page-image API request failed.';console.warn('Fandom page-image API failed for',c.name,err)}
-  // PageImages can return Fandom's generic missing-image graphic; treat that as no result.
-  if(isPlaceholderImage(imageUrl))imageUrl='';
-  if(!imageUrl){
-   const payload=await requestJson({action:'parse',prop:'text',page:pageTitle});
-   const markup=payload?.parse?.text?.['*'];
-   if(!markup)throw new Error('Fandom returned no parsed page HTML. '+apiError);
-   const doc=new DOMParser().parseFromString(markup,'text/html');
-   const picture=doc.querySelector('.portable-infobox .pi-image-thumbnail, .portable-infobox .pi-image img, .pi-image-thumbnail, .pi-image img, figure.pi-item img');
-   if(picture){
-    const srcset=picture.getAttribute('srcset')||picture.getAttribute('data-srcset')||'';
-    const largest=srcset.split(',').map(x=>x.trim().split(/\s+/)).filter(x=>x[0]).pop();
-    imageUrl=picture.getAttribute('data-src')||picture.getAttribute('data-lazy-src')||picture.getAttribute('data-original')||picture.getAttribute('data-original-src')||largest?.[0]||picture.getAttribute('src')||'';
-   }
-   if(imageUrl.startsWith('//'))imageUrl='https:'+imageUrl;
-   else if(imageUrl)imageUrl=new URL(imageUrl,c.url).href;
-   if(imageUrl.startsWith('data:'))imageUrl='';
-  }
-  if(isPlaceholderImage(imageUrl))imageUrl='';
-  if(!imageUrl)throw new Error('Fandom did not provide a usable main-page portrait for “'+pageTitle+'”. '+apiError);
+  }catch(err){apiError=err.message||'Fandom image lookup failed.';console.warn('Fandom image lookup failed for',c.name,err)}
+  if(!imageUrl)throw new Error('Fandom did not provide a usable source image for “'+pageTitle+'”. '+apiError);
   sourceImageCache.set(c.name,imageUrl);showImage(imageUrl);
  }catch(err){
   sourceImageCache.set(c.name,'');img.style.display='none';status.style.display='block';status.textContent='Image lookup failed: '+(err.message||String(err));credit.textContent='No image URL loaded. Check the diagnostic message above.';wrap.classList.remove('hidden');console.warn('Could not load source-page image for',c.name,err);
