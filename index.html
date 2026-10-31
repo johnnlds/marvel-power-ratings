@@ -59,7 +59,7 @@ main{padding-bottom:64px}.section{display:none}.section.active{display:block}.fi
 </main>
 <footer class="footer"><p>Based on Marvel Fandom's <a href="https://marvel.fandom.com/wiki/Power_Grid" target="_blank" rel="noopener">Power Grid</a>. Dataset last updated February 27, 2023.</p><p>Independent fan-made data explorer. Not affiliated with or endorsed by Marvel. Ratings reflect the source dataset and may be incomplete or outdated.</p></footer>
 </div>
-<div class="profile-overlay" id="profileOverlay" role="dialog" aria-modal="true" aria-labelledby="profileName"><div class="profile"><div class="profile-head"><button class="close" id="closeProfile" aria-label="Close profile">×</button><div class="eyebrow">Character file</div><h2 id="profileName"></h2><div class="sub" id="profileSub"></div></div><div class="profile-image-wrap hidden" id="profileImageWrap"><div class="profile-image-status" id="profileImageStatus" role="status">Looking for the source-page image…</div><img id="profileImage" alt="" loading="eager" decoding="async" style="display:none"><div class="profile-image-credit" id="profileImageCredit">Source-page image diagnostic will appear here.</div></div><div class="profile-body"><div class="profile-summary"><div><span class="field-label">Total</span><strong id="profileTotal"></strong></div><span class="versus">POWER GRID</span></div><section class="character-bio"><div class="field-label">Real name</div><p id="profileRealName">Loading…</p><div class="field-label">Current alias</div><p id="profileCurrentAlias">Loading source-page aliases…</p><div class="field-label">Former aliases & other names</div><p id="profileAliases">Loading…</p><div class="field-label">Powers & abilities</div><p id="profileDescription"></p></section><div id="profileStats"></div><div class="range-note" id="profileRange"></div><div class="profile-actions"><button class="btn primary" id="compareThis">Compare this character</button><a class="btn" id="wikiLink" href="#" target="_blank" rel="noopener">Open source page ↗</a></div></div></div></div>
+<div class="profile-overlay" id="profileOverlay" role="dialog" aria-modal="true" aria-labelledby="profileName"><div class="profile"><div class="profile-head"><button class="close" id="closeProfile" aria-label="Close profile">×</button><div class="eyebrow">Character file</div><h2 id="profileName"></h2><div class="sub" id="profileSub"></div></div><div class="profile-image-wrap hidden" id="profileImageWrap"><div class="profile-image-status" id="profileImageStatus" role="status">Looking for the source-page image…</div><img id="profileImage" alt="" loading="eager" decoding="async" style="display:none"><div class="profile-image-credit" id="profileImageCredit">Source-page image diagnostic will appear here.</div></div><div class="profile-body"><div class="profile-summary"><div><span class="field-label">Total</span><strong id="profileTotal"></strong></div><span class="versus">POWER GRID</span></div><section class="character-bio"><div class="field-label">Real name</div><p id="profileRealName">Loading…</p><div class="field-label">Current alias</div><p id="profileCurrentAlias">Loading source-page aliases…</p><div class="field-label">Former aliases & other names</div><p id="profileAliases">Loading…</p></section><div id="profileStats"></div><section class="character-bio"><div class="field-label">Powers & abilities</div><ul id="profilePowers"><li>Loading powers from source page…</li></ul></section><div class="range-note" id="profileRange"></div><div class="profile-actions"><button class="btn primary" id="compareThis">Compare this character</button><a class="btn" id="wikiLink" href="#" target="_blank" rel="noopener">Open source page ↗</a></div></div></div></div>
 <script>
 (() => {
 'use strict';
@@ -313,6 +313,47 @@ async function loadSourceImage(c){
   sourceImageCache.set(c.name,'');img.style.display='none';status.style.display='block';status.textContent='Image lookup failed: '+(err.message||String(err));credit.textContent='No source-page image could be loaded.';wrap.classList.remove('hidden');console.warn('Could not load source-page image for',c.name,err);
  }
 }
+async function loadSourcePowers(c){
+ const list=$('profilePowers');
+ list.innerHTML='<li>Loading powers from source page…</li>';
+ try{
+  const pagePath=new URL(c.url).pathname.split('/wiki/')[1];
+  if(!pagePath)throw new Error('No source page URL');
+  const pageTitle=decodeURIComponent(pagePath.replace(/_/g,' '));
+  const apiUrl='https://marvel.fandom.com/api.php?action=parse&prop=text&format=json&origin=*&page='+encodeURIComponent(pageTitle);
+  const response=await fetch(apiUrl,{headers:{Accept:'application/json'}});
+  if(!response.ok)throw new Error('Source page request failed');
+  const payload=await response.json(),html=payload?.parse?.text?.['*'];
+  if(!html)throw new Error('Source page did not return parsed content');
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  const headings=[...doc.querySelectorAll('.mw-parser-output h2, .mw-parser-output h3, .mw-parser-output h4, h2, h3, h4')];
+  const heading=headings.find(h=>/^powers(?: and abilities)?$/i.test((h.textContent||'').replace(/\\[edit\\]/gi,'').trim()));
+  if(!heading)throw new Error('No Powers section found');
+  const level=Number(heading.tagName.slice(1)),names=[],seen=new Set();
+  let node=heading.parentElement?.nextElementSibling;
+  while(node){
+   if(/^H[1-6]$/.test(node.tagName)&&Number(node.tagName.slice(1))<=level)break;
+   if(node.matches?.('h2,h3,h4,h5,h6')&&Number(node.tagName.slice(1))<=level)break;
+   node.querySelectorAll?.('li').forEach(li=>{
+    const clone=li.cloneNode(true);
+    clone.querySelectorAll('ul,ol,sup,.reference,.mw-editsection,style,script').forEach(el=>el.remove());
+    const raw=(clone.textContent||'').replace(/\\[[0-9]+\\]/g,'').replace(/\\s+/g,' ').trim();
+    const colon=raw.indexOf(':');
+    if(colon>0){
+     const name=raw.slice(0,colon).replace(/^[•·▪◦\\-\\s]+/,'').trim();
+     if(name&&!seen.has(name.toLowerCase())){seen.add(name.toLowerCase());names.push(name);}
+    }
+   });
+   node=node.nextElementSibling;
+  }
+  if(activeCharacter!==c)return;
+  list.innerHTML=names.length?names.map(name=>'<li>'+safe(name)+'</li>').join(''):'<li>No power names could be extracted from this page.</li>';
+ }catch(err){
+  if(activeCharacter!==c)return;
+  list.innerHTML='<li>Could not retrieve powers from the source page.</li>';
+  console.warn('Could not load source-page powers for',c.name,err);
+ }
+}
 async function loadSourceAliases(c){
  const info=infoFor(c),fallback=(info?.aliases||[]).filter(a=>normalizeName(a)!==normalizeName(baseName(c.name)));
  if(renderIndexedAliases(c))return;
@@ -331,7 +372,7 @@ async function loadSourceAliases(c){
   if(activeCharacter!==c)return;$('profileCurrentAlias').textContent=current||'No current alias listed on source page.';$('profileAliases').textContent=former||fallback.join(', ')||'No former aliases listed on source page.';
  }catch(err){if(activeCharacter!==c)return;$('profileCurrentAlias').textContent='Could not retrieve current alias from source page.';$('profileAliases').textContent=fallback.length?fallback.join(', '):'Could not retrieve aliases from source page.';console.warn('Could not load source-page aliases for',c.name,err);}
 }
-function openProfile(c){activeCharacter=c;const info=infoFor(c),source=sourceAliasInfo(c);$('profileName').textContent=displayName(c);$('profileSub').textContent=universe(c.name)+' · '+c.name;$('profileRealName').textContent=baseName(c.name);$('profileCurrentAlias').textContent=source?.currentAlias||info?.currentAlias||baseName(c.name)||'Not listed';$('profileAliases').textContent=[...(source?.formerAliases||[]),...(info?.aliases||[]).filter(a=>normalizeName(a)!==normalizeName(baseName(c.name)))].filter((value,i,all)=>value&&all.findIndex(other=>normalizeName(other)===normalizeName(value))===i).join(', ')||'Alias index is loading…';$('profileDescription').textContent=info?.description||'Powers summary has not been added';$('profileTotal').textContent=total(c,'min')+' / 42';$('profileStats').innerHTML=statBars(c);$('profileRange').textContent='';$('wikiLink').href=c.url||'https://marvel.fandom.com/wiki/Power_Grid';$('profileOverlay').classList.add('open');document.body.style.overflow='hidden';loadSourceAliases(c);loadSourceImage(c)}
+function openProfile(c){activeCharacter=c;const info=infoFor(c),source=sourceAliasInfo(c);$('profileName').textContent=displayName(c);$('profileSub').textContent=universe(c.name)+' · '+c.name;$('profileRealName').textContent=baseName(c.name);$('profileCurrentAlias').textContent=source?.currentAlias||info?.currentAlias||baseName(c.name)||'Not listed';$('profileAliases').textContent=[...(source?.formerAliases||[]),...(info?.aliases||[]).filter(a=>normalizeName(a)!==normalizeName(baseName(c.name)))].filter((value,i,all)=>value&&all.findIndex(other=>normalizeName(other)===normalizeName(value))===i).join(', ')||'Alias index is loading…';$('profileTotal').textContent=total(c,'min')+' / 42';$('profileStats').innerHTML=statBars(c);$('profilePowers').innerHTML='<li>Loading powers from source page…</li>';$('profileRange').textContent='';$('wikiLink').href=c.url||'https://marvel.fandom.com/wiki/Power_Grid';$('profileOverlay').classList.add('open');document.body.style.overflow='hidden';loadSourceAliases(c);loadSourceImage(c);loadSourcePowers(c)}
 function closeProfile(){$('profileOverlay').classList.remove('open');document.body.style.overflow='';$('profileImageWrap').classList.add('hidden');$('profileImage').removeAttribute('src')}
 function card(c){const kept=isKept(c);return `<article class="char-card" tabindex="0" role="button" data-profile="${safe(c.name)}" aria-label="Open ${safe(c.name)} profile"><div class="card-top"></div><div class="card-content"><h3 class="char-name">${safe(displayName(c))}</h3><div class="earth">${safe(universe(c.name))}${kept?' · ★ Kept':''}</div><div class="mini-grid">${STATS.map(s=>`<div class="mini-stat"><b>${safe(statDisplay(c,s))}</b><span>${s.short}</span></div>`).join('')}</div><div class="card-foot"><span class="score">${total(c,showMaxTotals?'max':'min')} <small>/ 42</small></span><button class="text-btn" type="button">View profile ↗</button></div><div class="card-keep-row"><button class="keep-btn ${kept?'kept':''}" type="button" data-pin="${safe(c.name)}" aria-pressed="${kept}">${kept?'★ Kept':'☆ Keep character'}</button></div></div></article>`}
 const visibleCharacters=()=>characters.filter(c=>!$('earth616Only').checked||universe(c.name)==='Earth-616');
