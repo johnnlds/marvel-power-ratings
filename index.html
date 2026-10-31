@@ -255,9 +255,9 @@ async function loadSourceImage(c){
  const showImage=url=>{
   if(!url||activeCharacter!==c)return;
   const absoluteUrl=new URL(url,c.url).href;
-  credit.textContent='Source-page image';
+  credit.textContent='';
   status.textContent='Image URL found; loading portrait…';
-  img.onload=()=>{if(activeCharacter===c){img.style.display='block';status.style.display='none';wrap.classList.remove('hidden');credit.textContent='Source-page image';}};
+  img.onload=()=>{if(activeCharacter===c){img.style.display='block';status.style.display='none';wrap.classList.remove('hidden');credit.textContent='';}};
   img.onerror=()=>{if(activeCharacter!==c)return;img.style.display='none';status.style.display='block';status.textContent='Image file failed to load.';credit.textContent='The source-page image could not be displayed.';console.warn('Character portrait URL failed to load for',c.name,absoluteUrl)};
   // Fandom's image CDN may reject embedded requests that include an external referrer.
   img.referrerPolicy='no-referrer';
