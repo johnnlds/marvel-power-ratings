@@ -326,19 +326,22 @@ async function loadSourcePowers(c){
   const payload=await response.json(),html=payload?.parse?.text?.['*'];
   if(!html)throw new Error('Source page did not return parsed content');
   const doc=new DOMParser().parseFromString(html,'text/html');
-  const headings=[...doc.querySelectorAll('.mw-parser-output h2, .mw-parser-output h3, .mw-parser-output h4, .mw-parser-output h5, h2, h3, h4, h5')];
-  const cleanHeading=h=>(h.textContent||'').replace(/\\[edit\\]/gi,'').replace(/\\s+/g,' ').trim().toLowerCase();
-  const parentIndex=headings.findIndex(h=>cleanHeading(h)==='powers and abilities');
-  let powerHeading=headings.find((h,i)=>i>parentIndex&&cleanHeading(h)==='powers');
-  if(!powerHeading)powerHeading=headings.find(h=>cleanHeading(h)==='powers');
-  let scope=null;
-  if(powerHeading){
-   scope=powerHeading.parentElement;
-   while(scope&&scope!==doc.body&&!scope.querySelector('ul li'))scope=scope.parentElement;
+  const root=doc.querySelector('.mw-parser-output')||doc.body;
+  const headings=[...root.querySelectorAll('h2, h3, h4, h5')];
+  const cleanHeading=h=>(h.querySelector('.mw-headline')?.textContent||h.textContent||'').replace(/\\[edit\\]/gi,'').replace(/\\s+/g,' ').trim().toLowerCase();
+  const powerIndex=headings.findIndex(h=>cleanHeading(h)==='powers');
+  if(powerIndex<0)throw new Error('No Powers section found');
+  const powerHeading=headings[powerIndex];
+  const level=Number(powerHeading.tagName.slice(1));
+  const endIndex=headings.findIndex((h,i)=>i>powerIndex&&Number(h.tagName.slice(1))<=level&&cleanHeading(h)==='weaknesses');
+  const boundaryIndex=endIndex<0?headings.findIndex((h,i)=>i>powerIndex&&Number(h.tagName.slice(1))<=level):endIndex;
+  const stopHeading=boundaryIndex<0?null:headings[boundaryIndex];
+  const sectionNodes=[];
+  for(let node=powerHeading.nextElementSibling;node&&node!==stopHeading;node=node.nextElementSibling){
+   if(/^H[2-5]$/.test(node.tagName)&&Number(node.tagName.slice(1))<=level)break;
+   sectionNodes.push(node);
   }
-  if(!scope&&parentIndex>=0)scope=headings[parentIndex].parentElement;
-  if(!scope)throw new Error('No Powers or Powers and Abilities section found');
-  const entries=[...scope.querySelectorAll('li')];
+  const entries=sectionNodes.flatMap(node=>[...(node.matches('ul,ol')?[node]:[]),...node.querySelectorAll('ul,ol')].flatMap(ul=>[...ul.children].filter(child=>child.tagName==='LI')));
   const names=[],seen=new Set();
   for(const li of entries){
    if(li.closest('nav,aside,.toc,.portable-infobox'))continue;
