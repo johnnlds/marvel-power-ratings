@@ -251,7 +251,7 @@ function getScore(c,metric,mode='max'){if(metric==='total')return total(c,mode);
 const sourceImageCache=new Map();
 async function loadSourceImage(c){
  const wrap=$('profileImageWrap'),img=$('profileImage'),status=$('profileImageStatus');
- wrap.classList.remove('hidden');status.textContent='Looking for the source-page image…';img.style.display='none';img.removeAttribute('src');img.alt=displayName(c);
+ wrap.classList.remove('hidden');status.style.display='block';status.textContent='Looking for the source-page image…';img.style.display='none';img.removeAttribute('src');img.alt=displayName(c);
  const showImage=url=>{
   if(!url||activeCharacter!==c)return;
   const absoluteUrl=new URL(url,c.url).href;
@@ -279,6 +279,9 @@ async function loadSourceImage(c){
    imageUrl=page?.original?.source||page?.thumbnail?.source||'';
    if(payload?.error)apiError=payload.error.info||payload.error.code||'Fandom page-image API returned an error.';
   }catch(err){apiError=err.message||'Page-image API request failed.';console.warn('Fandom page-image API failed for',c.name,err)}
+  const isPlaceholderImage=url=>/no[_-]?image|missing[_-]?image|placeholder|image[_-]?not[_-]?available|default[_-]?avatar/i.test(String(url||''));
+  // PageImages can return Fandom's generic missing-image graphic; treat that as no result.
+  if(isPlaceholderImage(imageUrl))imageUrl='';
   if(!imageUrl){
    const payload=await requestJson({action:'parse',prop:'text',page:pageTitle});
    const markup=payload?.parse?.text?.['*'];
@@ -294,7 +297,8 @@ async function loadSourceImage(c){
    else if(imageUrl)imageUrl=new URL(imageUrl,c.url).href;
    if(imageUrl.startsWith('data:'))imageUrl='';
   }
-  if(!imageUrl)throw new Error('Fandom returned page content but no main infobox image URL was found for “'+pageTitle+'”. '+apiError);
+  if(isPlaceholderImage(imageUrl))imageUrl='';
+  if(!imageUrl)throw new Error('Fandom did not provide a usable main-page portrait for “'+pageTitle+'”. '+apiError);
   sourceImageCache.set(c.name,imageUrl);showImage(imageUrl);
  }catch(err){
   sourceImageCache.set(c.name,'');img.style.display='none';status.style.display='block';status.textContent='Image lookup failed: '+(err.message||String(err));wrap.classList.remove('hidden');console.warn('Could not load source-page image for',c.name,err);
