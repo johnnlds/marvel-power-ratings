@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#101014">
-<title>Marvel Powers — Power Grid Explorer</title>
+<title>Marvel Power Grids</title>
 <style>
 :root{--bg:#0d0d11;--panel:#17171d;--panel2:#202027;--line:#34343d;--muted:#a2a2ae;--text:#f5f5f7;--red:#ed1d24;--red2:#ff4a50;--gold:#ffcc57;--green:#74e0a2;--radius:16px}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(ellipse at 85% -10%,#42151b 0,transparent 32%),var(--bg);color:var(--text);font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -24,21 +24,11 @@ main{padding-bottom:64px}.section{display:none}.section.active{display:block}.fi
 </head>
 <body>
 <header><div class="wrap top">
-<a class="brand" href="#" aria-label="Marvel Powers home"><span class="logo">M</span><span>MARVEL <span>POWERS</span></span></a>
+<a class="brand" href="#" aria-label="Marvel Power Grids home"><span class="logo">M</span><span>MARVEL <span>POWER GRIDS</span></span></a>
 <button class="nav-toggle" id="navToggle" aria-label="Open navigation">☰</button>
 <nav id="nav"><button class="active" data-tab="discover">Discover</button><button data-tab="compare">Compare</button></nav>
 </div></header>
 <div class="wrap">
-<section class="hero">
-<div class="eyebrow">The Marvel Power Grid Explorer</div>
-<h1>WHO'S THE <em>MOST</em><br>POWERFUL?</h1>
-<p>Explore Marvel character ratings across six classic power-grid attributes. Search the database, inspect different power ranges, and settle your own matchups.</p>
-<div class="stats">
-<div class="statpill"><strong id="totalChars">—</strong><span>Characters indexed</span></div>
-<div class="statpill"><strong>6</strong><span>Power attributes</span></div>
-<div class="statpill"><strong>1–7</strong><span>Rating scale</span></div>
-</div>
-</section>
 <main>
 <section class="section active" id="discover">
 <div class="section-head"><div><h2>Character database</h2><p>Browse profiles and explore their recorded power ranges.</p></div><div class="results-count" id="discoverCount">Loading character data…</div></div>
@@ -354,7 +344,7 @@ $('cards').addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.t
 $('closeProfile').addEventListener('click',closeProfile);$('profileOverlay').addEventListener('click',e=>{if(e.target===$('profileOverlay'))closeProfile()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeProfile()});
 $('compareThis').addEventListener('click',()=>{if(!activeCharacter)return;switchTab('compare');if(!compareNames.includes(activeCharacter.name)){if(compareNames.length>=10)compareNames.pop();compareNames.unshift(activeCharacter.name)}renderCompare();closeProfile()});
 async function loadDataset(){const urls=[DATA_URL,'https://cdn.jsdelivr.net/gh/sanand0/marvel-powers@master/marvel-powers-summary.json'];let lastError;for(const url of urls){const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),15000);try{const response=await fetch(url,{signal:controller.signal,cache:'no-cache'});if(!response.ok)throw new Error(`Dataset request failed (${response.status})`);const rows=await response.json();if(!Array.isArray(rows)||!rows.length||!rows[0].name||!('max Strength' in rows[0]))throw new Error('The JSON did not contain the expected character columns.');return rows.map(r=>{const c={name:r.name,url:r.url||''};for(const s of STATS){c[`min ${s.key}`]=Number(r[`min ${s.key}`])||0;c[`max ${s.key}`]=Number(r[`max ${s.key}`])||0}return c}).filter(c=>c.name)}catch(err){lastError=err;console.warn('Dataset source failed:',url,err)}finally{clearTimeout(timeout)}}throw lastError||new Error('All dataset sources failed')}
-async function init(){loadAliasIndex();try{const data=await loadDataset();characters=data;$('totalChars').textContent=characters.length.toLocaleString();characters.forEach(c=>searchText(c));applySearch();const iron=characters.find(c=>normalizeName(baseName(c.name))==='iron man')||characters.find(c=>normalizeName(c.name).startsWith('iron man'));const thor=characters.find(c=>normalizeName(baseName(c.name))==='thor')||characters.find(c=>normalizeName(c.name).startsWith('thor'));if(iron)compareNames.push(iron.name);if(thor&&thor.name!==iron?.name)compareNames.push(thor.name);renderCompare()}catch(err){console.error(err);$('cards').innerHTML=`<div class="empty">Couldn't load the character dataset after trying two sources.<br><br><span class="muted">Check your internet connection and reload. If the issue continues, the dataset host may be temporarily unavailable.</span><br><br><a href="${DATA_URL}" target="_blank" rel="noopener">Open source dataset ↗</a><br><br><button class="btn primary" type="button" onclick="location.reload()">Try again</button></div>`;$('discoverCount').textContent='Data unavailable'}}
+async function init(){loadAliasIndex();try{const data=await loadDataset();characters=data;const totalCharsEl=$('totalChars');if(totalCharsEl)totalCharsEl.textContent=characters.length.toLocaleString();characters.forEach(c=>searchText(c));applySearch();const iron=characters.find(c=>normalizeName(baseName(c.name))==='iron man')||characters.find(c=>normalizeName(c.name).startsWith('iron man'));const thor=characters.find(c=>normalizeName(baseName(c.name))==='thor')||characters.find(c=>normalizeName(c.name).startsWith('thor'));if(iron)compareNames.push(iron.name);if(thor&&thor.name!==iron?.name)compareNames.push(thor.name);renderCompare()}catch(err){console.error(err);$('cards').innerHTML=`<div class="empty">Couldn't load the character dataset after trying two sources.<br><br><span class="muted">Check your internet connection and reload. If the issue continues, the dataset host may be temporarily unavailable.</span><br><br><a href="${DATA_URL}" target="_blank" rel="noopener">Open source dataset ↗</a><br><br><button class="btn primary" type="button" onclick="location.reload()">Try again</button></div>`;$('discoverCount').textContent='Data unavailable'}}
 init();
 })();
 </script>
