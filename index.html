@@ -284,25 +284,9 @@ async function loadSourceImage(c){
   };
   try{
    if(normalizeName(pageTitle)==='daniel rand (earth-616)'){
-    // Danny's character page designates cover art as its page image. Read the
-    // first actual image in the gallery instead of using the page-level image API.
-    const galleryTitle=pageTitle+'/Gallery';
-    const galleryPayload=await requestJson({action:'parse',prop:'text',page:galleryTitle});
-    const galleryMarkup=galleryPayload?.parse?.text?.['*'];
-    if(!galleryMarkup)throw new Error('Fandom returned no parsed gallery HTML.');
-    const galleryDoc=new DOMParser().parseFromString(galleryMarkup,'text/html');
-    const galleryPictures=[...galleryDoc.querySelectorAll('.wikia-gallery-item img, .gallerybox img, .mw-gallery-traditional img, .mw-gallery-packed img, figure.gallery img, .gallery img')];
-    const galleryCandidates=galleryPictures.map(picture=>{
-     let candidate=imageFromElement(picture);
-     if(candidate.startsWith('//'))candidate='https:'+candidate;
-     else if(candidate)candidate=new URL(candidate,'https://marvel.fandom.com').href;
-     return {url:candidate,description:[picture.getAttribute('alt'),picture.getAttribute('title'),picture.closest('a')?.getAttribute('title'),picture.closest('figure')?.textContent].filter(Boolean).join(' ')};
-    }).filter(item=>item.url&&!item.url.startsWith('data:')&&!isPlaceholderImage(item.url));
-    // Fandom currently puts an Undead Iron Fist comic-cover variant first in this gallery.
-    // Exclude that cover and use the next real gallery image rather than repeating page artwork.
-    const portrait=galleryCandidates.find(item=>!/Deadly_Hands_of_K%27un-Lun_Vol_1_1_Undead_Iron_Fist_Variant_Textless|Deadly Hands of K.?un-Lun Vol 1 1 Undead Iron Fist Variant Textless/i.test(item.url+' '+item.description));
-    imageUrl=portrait?.url||'';
-    if(!imageUrl)throw new Error('No non-cover portrait image was found in Danny Rand’s Fandom gallery.');
+    // This exact Fandom image URL was verified by the user to display the
+    // correct Danny Rand portrait. Do not infer image suitability from its filename.
+    imageUrl='https://static.wikia.nocookie.net/marveldatabase/images/6/6d/Deadly_Hands_of_K%27un-Lun_Vol_1_1_Undead_Iron_Fist_Variant_Textless.jpg/revision/latest?cb=20260529163019';
    }else{
     const payload=await requestJson({action:'query',prop:'pageimages',piprop:'thumbnail|original',pithumbsize:'1000',pilicense:'any',titles:pageTitle});
     const pages=payload?.query?.pages||{},page=Object.values(pages)[0];
