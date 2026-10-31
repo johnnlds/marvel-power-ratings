@@ -274,13 +274,21 @@ async function loadSourceImage(c){
   };
   let imageUrl='';
   let apiError='';
-  try{
-   const payload=await requestJson({action:'query',prop:'pageimages',piprop:'thumbnail|original',pithumbsize:'1000',pilicense:'any',titles:pageTitle});
-   const pages=payload?.query?.pages||{},page=Object.values(pages)[0];
-   imageUrl=page?.original?.source||page?.thumbnail?.source||'';
-   if(payload?.error)apiError=payload.error.info||payload.error.code||'Fandom page-image API returned an error.';
-  }catch(err){apiError=err.message||'Page-image API request failed.';console.warn('Fandom page-image API failed for',c.name,err)}
   const isPlaceholderImage=url=>/no[_-]?image|missing[_-]?image|placeholder|image[_-]?not[_-]?available|default[_-]?avatar/i.test(String(url||''));
+  const getPageImage=async title=>{
+   const payload=await requestJson({action:'query',prop:'pageimages',piprop:'thumbnail|original',pithumbsize:'1000',pilicense:'any',titles:title});
+   const pages=payload?.query?.pages||{},page=Object.values(pages)[0];
+   return page?.original?.source||page?.thumbnail?.source||'';
+  };
+  try{
+   // Danny Rand's character page uses cover art as its page image. Use the lead image
+   // from his Fandom gallery instead, which is the character portrait.
+   if(normalizeName(pageTitle)==='daniel rand (earth-616)'){
+    imageUrl=await getPageImage(pageTitle+'/Gallery');
+    if(isPlaceholderImage(imageUrl))imageUrl='';
+   }
+   if(!imageUrl)imageUrl=await getPageImage(pageTitle);
+  }catch(err){apiError=err.message||'Page-image API request failed.';console.warn('Fandom page-image API failed for',c.name,err)}
   // PageImages can return Fandom's generic missing-image graphic; treat that as no result.
   if(isPlaceholderImage(imageUrl))imageUrl='';
   if(!imageUrl){
